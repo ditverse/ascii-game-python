@@ -5,15 +5,30 @@ Sebuah permainan Pong multiplayer waktu nyata (real-time) yang berjalan sepenuhn
 ## Fitur
 
 - **Multiplayer Real-time**: Dua pemain dapat bermain melawan satu sama lain melalui Jaringan Area Lokal (LAN).
+- **Chat Lobby**: Pemain dapat berinteraksi via chat sebelum dan sesudah permainan.
 - **Antarmuka CLI**: Menggunakan karakter ASCII untuk merender papan permainan, pemukul (paddle), dan bola.
 - **Lintas Platform**: Berjalan di sistem Linux dan Windows dengan penanganan input spesifik platform.
-- **Tanpa Ketergantungan Eksternal**: Dibangun hanya menggunakan pustaka standar Python (socket, threading, dll.). Tidak memerlukan instalasi paket pip tambahan.
+- **Tanpa Ketergantungan Eksternal**: Dibangun hanya menggunakan pustaka standar Python (socket, threading, dll.).
 
 ## Persyaratan
 
 - Python 3.6 atau lebih baru
 - Jendela terminal atau command prompt
 - Koneksi jaringan (Wi-Fi/LAN) untuk mode multiplayer
+
+## Struktur Proyek
+
+```
+pong-cli/
+├── main.py           # Entry point
+├── config.py         # Konstanta dan konfigurasi
+├── input_handler.py  # Penanganan input keyboard
+├── game_state.py     # GameState & LobbyState
+├── renderer.py       # Rendering ASCII
+├── physics.py        # Fisika permainan
+├── server.py         # GameServer class
+└── client.py         # GameClient class
+```
 
 ## Cara Bermain
 
@@ -27,27 +42,30 @@ Host bertindak sebagai server permainan sekaligus pemain pertama (pemukul kiri).
    python3 main.py
    ```
 3. Pilih opsi **[1] Host Game**.
-4. Server akan mulai dan menampilkan Alamat IP Anda (contoh: 192.168.1.10). Bagikan IP ini kepada Pemain 2.
-5. Permainan akan menunggu pemain kedua terhubung.
+4. Server akan mulai dan menampilkan Alamat IP Anda.
+5. Tunggu pemain kedua terhubung.
+6. Di **Lobby**, tekan **TAB** untuk memulai permainan.
 
 ### 2. Bergabung ke Permainan (Pemain 2)
 
-Pemain kedua terhubung ke host untuk bermain sebagai pemukul kanan.
-
-1. Buka terminal di perangkat kedua (atau jendela terpisah di mesin yang sama).
+1. Buka terminal di perangkat kedua.
 2. Jalankan permainan:
    ```bash
    python3 main.py
    ```
 3. Pilih opsi **[2] Join Game**.
-4. Masukkan **Alamat IP Host** yang ditampilkan di layar host.
-5. Setelah terhubung, permainan akan dimulai secara otomatis.
+4. Masukkan **Alamat IP Host**.
+5. Tunggu host memulai permainan.
 
 ### Kontrol
 
-- **W**: Gerakkan Pemukul Ke Atas
-- **S**: Gerakkan Pemukul Ke Bawah
-- **Q**: Keluar Permainan
+| Lokasi | Tombol | Aksi |
+|--------|--------|------|
+| Lobby | Ketik + ENTER | Kirim pesan chat |
+| Lobby | TAB | Mulai permainan (Host saja) |
+| Lobby | Q | Keluar |
+| Game | W | Gerakkan pemukul ke atas |
+| Game | S | Gerakkan pemukul ke bawah |
 
 ### Aturan
 
@@ -55,107 +73,88 @@ Pemain kedua terhubung ke host untuk bermain sebagai pemukul kanan.
 - Pukul bola dengan pemukul Anda untuk memantulkannya kembali.
 - Jika bola melewati pemukul Anda, lawan mencetak poin.
 - Pemain pertama yang mencapai **5 poin** memenangkan permainan.
+- Setelah permainan selesai, hasil ditampilkan di lobby.
 
 ## Arsitektur Teknis
 
-Aplikasi ini menggunakan arsitektur berkas tunggal (`main.py`) yang mengintegrasikan logika Server dan Client.
-
 - **Komunikasi**: Soket TCP (Port 5555).
-- **Konkurensi**: Threading digunakan untuk menangani komunikasi jaringan (kirim/terima), fisika permainan, dan input pengguna secara simultan tanpa pemblokiran.
-- **Protokol**: Protokol berbasis string sederhana digunakan untuk sinkronisasi status (format CSV).
+- **Konkurensi**: Threading untuk komunikasi jaringan, fisika permainan, dan input.
+- **Protokol**: Format string sederhana (CSV-like).
   - Client mengirim input: `INPUT,W` atau `INPUT,S`
+  - Client mengirim chat: `CHAT,pesan`
   - Server menyiarkan status: `STATE,ball_x,ball_y,paddle1,paddle2,score1,score2`
+  - Server menyiarkan lobby: `LOBBY_STATE,p1,p2,winner,score1,score2,chat`
 
 ## Diagram Alur (Flowchart)
 
 ```mermaid
 flowchart TD
-    Start([Mulai Aplikasi]) --> Menu[Tampilkan Menu Utama]
+    Start([Mulai Aplikasi]) --> Menu[Menu Utama]
     Menu --> Pilihan{Pilih Mode}
     
-    %% Alur Host
-    Pilihan -- "[1] Host Game" --> StartServer[Mulai Server Thread]
-    StartServer --> BindPort[Bind Port 5555 \n& Tampilkan IP]
-    BindPort --> StartClient1[Mulai Client Thread Lokal]
-    StartClient1 --> WaitP2[Menunggu Lawan...]
+    Pilihan -- "[1] Host Game" --> StartServer[Mulai Server]
+    StartServer --> WaitP2[Menunggu Lawan...]
     
-    %% Alur Join
     Pilihan -- "[2] Join Game" --> InputIP[/Input IP Host/]
     InputIP --> Connect[Koneksi ke Server]
     Connect --> ConnectionCheck{Berhasil?}
     ConnectionCheck -- Tidak --> Menu
-    ConnectionCheck -- Ya --> WaitStart
+    ConnectionCheck -- Ya --> Lobby
     
-    WaitP2 -- Lawan Terhubung --> Sync[Sinkronisasi Awal]
-    WaitStart --> Sync
+    WaitP2 -- Lawan Terhubung --> Lobby[Masuk Lobby]
     
-    %% Game Loop
-    Sync --> GameLoop{Game Loop}
-    GameLoop --> Input[/Baca Input W/S/]
-    Input --> SendServer[Kirim ke Server]
+    Lobby --> Chat{Chat / Tunggu}
+    Chat --> StartCheck{Host tekan TAB?}
+    StartCheck -- Tidak --> Chat
+    StartCheck -- Ya --> Game[Game Loop]
     
-    subgraph Server Logic
-    SendServer --> UpdatePhysics[Update Posisi Bola/Paddle]
-    UpdatePhysics --> Broadcast[Broadcast State ke Client]
-    end
-    
-    Broadcast --> Render[Client: Render ASCII TUI]
-    Render --> CekSkor{Skor >= 5?}
-    CekSkor -- Tidak --> GameLoop
-    CekSkor -- Ya --> GameOver([Game Selesai])
-    GameOver --> Menu
+    Game --> CekSkor{Skor >= 5?}
+    CekSkor -- Tidak --> Game
+    CekSkor -- Ya --> GameOver[Tampilkan Pemenang]
+    GameOver --> Lobby
 ```
 
 ## Diagram Urutan (Sequence Diagram)
 
 ```mermaid
 sequenceDiagram
-    participant H_User as Host (User)
-    participant Host as Host (Main/Server)
-    participant G_User as Guest (User)
-    participant Guest as Guest (Client)
+    participant H as Host
+    participant S as Server
+    participant G as Guest
 
-    Note over Host, Guest: Tahap Inisialisasi
-    H_User->>Host: Pilih [1] Host Game
-    Host->>Host: Start Server Thread (Port 5555)
-    Host->>Host: Connect Local Client (Player 1)
+    Note over H, G: Inisialisasi
+    H->>S: Mulai Server
+    H->>S: Connect sebagai Player 1
+    G->>S: Connect sebagai Player 2
+    S-->>H: LOBBY_READY
+    S-->>G: LOBBY_READY
     
-    G_User->>Guest: Pilih [2] Join Game
-    G_User->>Guest: Input IP Host
-    Guest->>Host: Establish TCP Connection
-    Host-->>Guest: Accept Connection (Player 2)
+    Note over H, G: Lobby (Chat)
+    H->>S: CHAT,Hello!
+    S-->>H: LOBBY_STATE
+    S-->>G: LOBBY_STATE
     
-    Note over Host, Guest: Game Loop (Berjalan Terus-menerus)
-    Host->>Guest: Broadcast "START"
+    Note over H, G: Mulai Game
+    H->>S: START_GAME (TAB)
+    S-->>H: GAME_START
+    S-->>G: GAME_START
     
-    loop Real-time Sync (20 FPS)
-        par Input Handling
-            H_User->>Host: Tekan 'W'
-            Host->>Host: Process Input P1
-        and
-            G_User->>Guest: Tekan 'S'
-            Guest->>Host: Kirim "INPUT,S"
-        end
-        
-        Host->>Host: Update Physics (Bola, Paddle, Skor)
-        Host->>Host: Serialize State
-        
-        par Broadcast State
-            Host->>Host: Update TUI Lokal
-            Host->>Guest: Kirim "STATE,..."
-            Guest->>Guest: Update TUI Remote
-        end
+    loop Game Loop (20 FPS)
+        H->>S: INPUT,W
+        G->>S: INPUT,S
+        S->>S: Update Physics
+        S-->>H: STATE,...
+        S-->>G: STATE,...
     end
     
-    Note over Host, Guest: Terminasi
-    Host->>Host: Cek Skor >= 5
-    Host->>Guest: Kirim "GAMEOVER,Winner"
-    host->>H_User: Tampilkan Game Over
-    Guest->>G_User: Tampilkan Game Over
-    Host->>Host: Close Connection
+    Note over H, G: Game Selesai
+    S-->>H: GAMEOVER,winner
+    S-->>G: GAMEOVER,winner
+    S-->>H: RETURN_LOBBY
+    S-->>G: RETURN_LOBBY
 ```
 
 ## Penulis
 
-Proyek Tugas Besar Network Programming
+Proyek Tugas Besar Network Programming  
 Dibuat menggunakan Python Standard Library.
