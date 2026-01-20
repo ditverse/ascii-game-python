@@ -5,6 +5,7 @@ Network Programming Final Project
 
 A real-time multiplayer Pong game running entirely in CLI/Terminal using ASCII graphics.
 Uses Host-Client architecture over TCP sockets.
+Features: Chat Lobby, Real-time gameplay, ASCII UI
 """
 
 import socket
@@ -26,11 +27,15 @@ FPS = 20
 FRAME_TIME = 1.0 / FPS
 
 PORT = 5555
-BUFFER_SIZE = 1024
+BUFFER_SIZE = 2048
 
 # Ball speed
 BALL_SPEED_X = 1.5
 BALL_SPEED_Y = 1.0
+
+# Lobby settings
+MAX_CHAT_HISTORY = 8
+LOBBY_WIDTH = 62
 
 # ============================================================================
 # CROSS-PLATFORM INPUT HANDLING
@@ -41,15 +46,17 @@ class InputHandler:
     
     def __init__(self):
         self.current_key = None
+        self.current_line = ""
+        self.line_ready = False
         self.lock = threading.Lock()
         self.running = True
         self._old_settings = None
         self._thread = None
+        self.mode = "key"  # "key" for single key, "line" for text input
         
     def start(self):
         """Start the input handler thread."""
         if os.name != 'nt':
-            # Save terminal settings on Linux
             import termios
             try:
                 self._old_settings = termios.tcgetattr(sys.stdin.fileno())
@@ -69,12 +76,34 @@ class InputHandler:
             except:
                 pass
     
+    def set_mode(self, mode):
+        """Set input mode: 'key' or 'line'."""
+        with self.lock:
+            self.mode = mode
+            self.current_line = ""
+            self.line_ready = False
+    
     def get_key(self):
         """Get the current key (thread-safe)."""
         with self.lock:
             key = self.current_key
             self.current_key = None
             return key
+    
+    def get_line(self):
+        """Get completed line input."""
+        with self.lock:
+            if self.line_ready:
+                line = self.current_line
+                self.current_line = ""
+                self.line_ready = False
+                return line
+            return None
+    
+    def get_partial_line(self):
+        """Get current partial line being typed."""
+        with self.lock:
+            return self.current_line
     
     def _input_loop(self):
         """Background thread that reads keyboard input."""
@@ -91,9 +120,8 @@ class InputHandler:
                 if msvcrt.kbhit():
                     key = msvcrt.getch()
                     try:
-                        key_char = key.decode('utf-8').upper()
-                        with self.lock:
-                            self.current_key = key_char
+                        key_char = key.decode('utf-8')
+                        self._process_key(key_char)
                     except:
                         pass
                 time.sleep(0.01)
@@ -108,13 +136,12 @@ class InputHandler:
         
         fd = sys.stdin.fileno()
         try:
-            tty.setcbreak(fd)  # Use cbreak mode instead of raw for better compatibility
+            tty.setcbreak(fd)
             while self.running:
                 try:
                     if select.select([sys.stdin], [], [], 0.01)[0]:
-                        key = sys.stdin.read(1).upper()
-                        with self.lock:
-                            self.current_key = key
+                        key = sys.stdin.read(1)
+                        self._process_key(key)
                 except:
                     break
         finally:
@@ -123,12 +150,36 @@ class InputHandler:
                     termios.tcsetattr(fd, termios.TCSADRAIN, self._old_settings)
                 except:
                     pass
+    
+    def _process_key(self, key):
+        """Process a key press based on current mode."""
+        with self.lock:
+            # Always set current_key for single-key reading (used in game mode)
+            self.current_key = key.upper()
+            
+            if self.mode == "line":
+                # In line mode, also accumulate text for chat
+                if key == '\r' or key == '\n':
+                    self.line_ready = True
+                elif key == '\x7f' or key == '\b':  # Backspace
+                    self.current_line = self.current_line[:-1]
+                elif key.isprintable() and key.upper() not in ['S', 'Q']:
+                    # Don't add S/Q to chat line (they are commands)
+                    if len(self.current_line) < 40:
+                        self.current_line += key
+
 
 
 def clear_screen():
     """Clear the terminal screen."""
-    # Use ANSI escape codes for faster clearing (avoids subprocess)
     print("\033[H\033[J", end="", flush=True)
+
+
+def restore_terminal():
+    """Restore terminal to normal mode."""
+    if os.name != 'nt':
+        import termios
+        os.system('stty sane')
 
 
 # ============================================================================
@@ -143,23 +194,14 @@ class GameState:
     
     def reset(self):
         """Reset game to initial state."""
-        # Ball position (center)
         self.ball_x = GAME_WIDTH // 2
         self.ball_y = GAME_HEIGHT // 2
-        
-        # Ball velocity (random direction)
         self.ball_vx = BALL_SPEED_X * random.choice([-1, 1])
         self.ball_vy = BALL_SPEED_Y * random.choice([-1, 1])
-        
-        # Paddle positions (center vertically)
-        self.paddle1_y = GAME_HEIGHT // 2 - PADDLE_HEIGHT // 2  # Left paddle (Player 1)
-        self.paddle2_y = GAME_HEIGHT // 2 - PADDLE_HEIGHT // 2  # Right paddle (Player 2)
-        
-        # Scores
+        self.paddle1_y = GAME_HEIGHT // 2 - PADDLE_HEIGHT // 2
+        self.paddle2_y = GAME_HEIGHT // 2 - PADDLE_HEIGHT // 2
         self.score1 = 0
         self.score2 = 0
-        
-        # Game status
         self.running = True
         self.winner = None
     
@@ -184,14 +226,100 @@ class GameState:
 
 
 # ============================================================================
-# ASCII RENDERER
+# LOBBY STATE
+# ============================================================================
+
+class LobbyState:
+    """Holds lobby and chat data."""
+    
+    def __init__(self):
+        self.chat_history = []  # List of (player_id, message)
+        self.players_connected = [False, False]  # Player 1, Player 2
+    
+    def add_message(self, player_id, message):
+        """Add a chat message."""
+        self.chat_history.append((player_id, message))
+        if len(self.chat_history) > MAX_CHAT_HISTORY:
+            self.chat_history.pop(0)
+    
+    def serialize_chat(self):
+        """Serialize chat for network."""
+        messages = []
+        for pid, msg in self.chat_history:
+            messages.append(f"{pid}:{msg}")
+        return "|".join(messages)
+    
+    @staticmethod
+    def deserialize_chat(data):
+        """Parse chat history from network."""
+        if not data:
+            return []
+        messages = []
+        for item in data.split("|"):
+            if ":" in item:
+                pid, msg = item.split(":", 1)
+                messages.append((int(pid), msg))
+        return messages
+
+
+# ============================================================================
+# LOBBY RENDERER
+# ============================================================================
+
+def render_lobby(lobby_state, player_id, input_text=""):
+    """Render the lobby screen."""
+    clear_screen()
+    
+    w = LOBBY_WIDTH
+    
+    print("+" + "=" * w + "+")
+    print("|" + "GAME LOBBY".center(w) + "|")
+    print("+" + "-" * w + "+")
+    
+    # Player status
+    p1_status = "Connected" if lobby_state.players_connected[0] else "Waiting..."
+    p2_status = "Connected" if lobby_state.players_connected[1] else "Waiting..."
+    status_line = f"  Player 1: {p1_status}  |  Player 2: {p2_status}"
+    print("|" + status_line.ljust(w) + "|")
+    
+    print("+" + "-" * w + "+")
+    print("|" + " CHAT".ljust(w) + "|")
+    print("+" + "-" * w + "+")
+    
+    # Chat messages (show last MAX_CHAT_HISTORY)
+    for i in range(MAX_CHAT_HISTORY):
+        if i < len(lobby_state.chat_history):
+            pid, msg = lobby_state.chat_history[i]
+            player_tag = f"[P{pid}]"
+            line = f"  {player_tag} {msg}"
+            print("|" + line[:w].ljust(w) + "|")
+        else:
+            print("|" + " " * w + "|")
+    
+    print("+" + "-" * w + "+")
+    
+    # Instructions
+    if player_id == 1:
+        print("|" + "  [S] Start Game  |  [Q] Quit".ljust(w) + "|")
+    else:
+        print("|" + "  Waiting for host to start...  |  [Q] Quit".ljust(w) + "|")
+    
+    print("+" + "-" * w + "+")
+    
+    # Input line
+    input_display = f"> {input_text}_"
+    print("|" + input_display[:w].ljust(w) + "|")
+    print("+" + "=" * w + "+")
+
+
+# ============================================================================
+# GAME RENDERER
 # ============================================================================
 
 def render_game(state, player_id):
     """Render the game state as ASCII art."""
     clear_screen()
     
-    # Create empty game field
     field = [[' ' for _ in range(GAME_WIDTH)] for _ in range(GAME_HEIGHT)]
     
     # Draw center net
@@ -218,12 +346,10 @@ def render_game(state, player_id):
     if 0 <= ball_x < GAME_WIDTH and 0 <= ball_y < GAME_HEIGHT:
         field[ball_y][ball_x] = 'O'
     
-    # Build display string
     top_border = '+' + '-' * GAME_WIDTH + '+'
     
-    # Score display
-    player_label = f"YOU (Player {player_id})"
-    opponent_label = f"Opponent (Player {2 if player_id == 1 else 1})"
+    player_label = f"YOU (P{player_id})"
+    opponent_label = f"Opponent (P{2 if player_id == 1 else 1})"
     
     if player_id == 1:
         score_line = f"  {player_label}: {state.score1}  |  {opponent_label}: {state.score2}"
@@ -231,7 +357,7 @@ def render_game(state, player_id):
         score_line = f"  {opponent_label}: {state.score1}  |  {player_label}: {state.score2}"
     
     print("\n" + "=" * (GAME_WIDTH + 2))
-    print("        TERMINAL PONG - Network Programming Project")
+    print("  TERMINAL PONG - Network Programming")
     print("=" * (GAME_WIDTH + 2))
     print(score_line)
     print(top_border)
@@ -240,7 +366,7 @@ def render_game(state, player_id):
         print('|' + ''.join(row) + '|')
     
     print(top_border)
-    print("  Controls: W = Up, S = Down, Q = Quit")
+    print("  Controls: W = Up, S = Down")
     print("=" * (GAME_WIDTH + 2))
 
 
@@ -252,44 +378,40 @@ def show_game_over(winner, player_id):
     print("=" * 40)
     
     if winner == player_id:
-        print("\n      🎉 CONGRATULATIONS! YOU WIN! 🎉")
+        print("\n       CONGRATULATIONS! YOU WIN!")
     else:
-        print("\n         ❌ YOU LOSE! Better luck next time!")
+        print("\n       YOU LOSE! Better luck next time!")
     
     print("\n" + "=" * 40)
-    print("  Press any key to return to menu...")
+    print("  Returning to lobby in 3 seconds...")
+    print("=" * 40)
 
 
 # ============================================================================
-# GAME PHYSICS (Server-side)
+# GAME PHYSICS
 # ============================================================================
 
 def update_physics(state):
     """Update ball position and handle collisions."""
-    # Move ball
     state.ball_x += state.ball_vx
     state.ball_y += state.ball_vy
     
-    # Top/Bottom wall collision
     if state.ball_y <= 0 or state.ball_y >= GAME_HEIGHT - 1:
         state.ball_vy = -state.ball_vy
         state.ball_y = max(0, min(GAME_HEIGHT - 1, state.ball_y))
     
-    # Left paddle collision (Player 1)
     paddle1_x = 2
     if state.ball_x <= paddle1_x + 1 and state.ball_vx < 0:
         if state.paddle1_y <= state.ball_y <= state.paddle1_y + PADDLE_HEIGHT:
             state.ball_vx = -state.ball_vx
             state.ball_x = paddle1_x + 1
     
-    # Right paddle collision (Player 2)
     paddle2_x = GAME_WIDTH - 3
     if state.ball_x >= paddle2_x - 1 and state.ball_vx > 0:
         if state.paddle2_y <= state.ball_y <= state.paddle2_y + PADDLE_HEIGHT:
             state.ball_vx = -state.ball_vx
             state.ball_x = paddle2_x - 1
     
-    # Scoring
     if state.ball_x <= 0:
         state.score2 += 1
         reset_ball(state, direction=1)
@@ -297,7 +419,6 @@ def update_physics(state):
         state.score1 += 1
         reset_ball(state, direction=-1)
     
-    # Check win condition
     if state.score1 >= WIN_SCORE:
         state.running = False
         state.winner = 1
@@ -329,19 +450,22 @@ def move_paddle(state, player_id, direction):
 
 
 # ============================================================================
-# SERVER (Host Mode)
+# SERVER
 # ============================================================================
 
 class GameServer:
-    """TCP Server that manages game state and clients."""
+    """TCP Server that manages lobby and game."""
     
     def __init__(self):
-        self.state = GameState()
-        self.clients = {}  # {socket: player_id}
+        self.game_state = GameState()
+        self.lobby_state = LobbyState()
+        self.clients = {}
         self.client_sockets = []
         self.lock = threading.Lock()
         self.running = True
-        self.game_started = False
+        self.in_lobby = True
+        self.game_running = False
+        self.players_ready = 0
     
     def get_local_ip(self):
         """Get the local LAN IP address."""
@@ -362,12 +486,9 @@ class GameServer:
         self.server_socket.listen(2)
         
         local_ip = self.get_local_ip()
-        print(f"\n[SERVER] Game server started!")
-        print(f"[SERVER] Your IP Address: {local_ip}")
-        print(f"[SERVER] Port: {PORT}")
-        print(f"[SERVER] Waiting for players to connect...")
+        print(f"\n[SERVER] Started on {local_ip}:{PORT}")
+        print("[SERVER] Waiting for players...")
         
-        # Accept connections in a thread
         accept_thread = threading.Thread(target=self.accept_connections)
         accept_thread.daemon = True
         accept_thread.start()
@@ -383,13 +504,11 @@ class GameServer:
                 with self.lock:
                     self.clients[client_socket] = player_id
                     self.client_sockets.append(client_socket)
+                    self.lobby_state.players_connected[player_id - 1] = True
                 
                 print(f"[SERVER] Player {player_id} connected from {addr}")
-                
-                # Send player ID to client
                 client_socket.send(f"PLAYER,{player_id}".encode())
                 
-                # Start handler thread
                 handler = threading.Thread(target=self.handle_client, args=(client_socket, player_id))
                 handler.daemon = True
                 handler.start()
@@ -397,63 +516,108 @@ class GameServer:
                 player_id += 1
                 
                 if player_id > 2:
-                    self.game_started = True
-                    print("[SERVER] All players connected! Starting game...")
-                    self.broadcast("START")
-                    time.sleep(0.5)
+                    print("[SERVER] All players connected! Entering lobby...")
+                    self.broadcast("LOBBY_READY")
+                    self.broadcast_lobby_state()
                     
             except Exception as e:
                 if self.running:
-                    print(f"[SERVER] Accept error: {e}")
+                    print(f"[SERVER] Error: {e}")
     
     def handle_client(self, client_socket, player_id):
-        """Handle input from a client."""
+        """Handle messages from a client."""
         while self.running:
             try:
                 data = client_socket.recv(BUFFER_SIZE).decode()
                 if not data:
                     break
                 
-                if data.startswith("INPUT,"):
-                    direction = data.split(',')[1]
-                    with self.lock:
-                        if direction in ['W', 'S']:
-                            move_paddle(self.state, player_id, direction)
+                # Handle multiple messages in buffer
+                for message in data.split('\n'):
+                    if not message:
+                        continue
+                    self.process_message(message, player_id)
                             
             except Exception as e:
                 break
         
         print(f"[SERVER] Player {player_id} disconnected")
+        with self.lock:
+            self.lobby_state.players_connected[player_id - 1] = False
+    
+    def process_message(self, message, player_id):
+        """Process a single message from client."""
+        if message.startswith("CHAT,"):
+            chat_msg = message[5:]
+            with self.lock:
+                self.lobby_state.add_message(player_id, chat_msg)
+            self.broadcast_lobby_state()
+            
+        elif message.startswith("INPUT,"):
+            direction = message.split(',')[1]
+            with self.lock:
+                if direction in ['W', 'S']:
+                    move_paddle(self.game_state, player_id, direction)
+                    
+        elif message == "START_GAME" and player_id == 1:
+            # Run game in separate thread to avoid blocking handle_client
+            game_thread = threading.Thread(target=self.start_game)
+            game_thread.daemon = True
+            game_thread.start()
     
     def broadcast(self, message):
-        """Send message to all connected clients."""
+        """Send message to all clients."""
         for client_socket in self.client_sockets:
             try:
-                client_socket.send(message.encode())
+                client_socket.send((message + "\n").encode())
             except:
                 pass
     
+    def broadcast_lobby_state(self):
+        """Send lobby state to all clients."""
+        with self.lock:
+            chat_data = self.lobby_state.serialize_chat()
+            p1 = "1" if self.lobby_state.players_connected[0] else "0"
+            p2 = "1" if self.lobby_state.players_connected[1] else "0"
+        self.broadcast(f"LOBBY_STATE,{p1},{p2},{chat_data}")
+    
+    def start_game(self):
+        """Start the game from lobby."""
+        with self.lock:
+            self.in_lobby = False
+            self.game_running = True
+            self.game_state.reset()
+        
+        self.broadcast("GAME_START")
+        time.sleep(0.5)
+        
+        # Run game loop
+        self.run_game_loop()
+        
+        # Return to lobby
+        with self.lock:
+            self.in_lobby = True
+            self.game_running = False
+        
+        time.sleep(3)
+        self.broadcast("RETURN_LOBBY")
+        self.broadcast_lobby_state()
+    
     def run_game_loop(self):
         """Main game physics loop."""
-        # Wait for all players
-        while not self.game_started and self.running:
-            time.sleep(0.1)
-        
-        while self.state.running and self.running:
+        while self.game_state.running and self.running:
             start_time = time.time()
             
             with self.lock:
-                update_physics(self.state)
-                state_data = self.state.serialize()
+                update_physics(self.game_state)
+                state_data = self.game_state.serialize()
             
             self.broadcast(state_data)
             
-            # Check for game over
-            if not self.state.running:
-                self.broadcast(f"GAMEOVER,{self.state.winner}")
+            if not self.game_state.running:
+                self.broadcast(f"GAMEOVER,{self.game_state.winner}")
                 break
             
-            # Frame timing
             elapsed = time.time() - start_time
             if elapsed < FRAME_TIME:
                 time.sleep(FRAME_TIME - elapsed)
@@ -482,9 +646,11 @@ class GameClient:
     def __init__(self):
         self.socket = None
         self.player_id = None
-        self.state = GameState()
+        self.game_state = GameState()
+        self.lobby_state = LobbyState()
         self.running = True
-        self.game_started = False
+        self.in_lobby = False
+        self.in_game = False
         self.lock = threading.Lock()
         self.input_handler = None
     
@@ -496,102 +662,189 @@ class GameClient:
             self.socket.connect((host_ip, PORT))
             self.socket.settimeout(None)
             
-            # Receive player ID
             data = self.socket.recv(BUFFER_SIZE).decode()
             if data.startswith("PLAYER,"):
                 self.player_id = int(data.split(',')[1])
                 print(f"\n[CLIENT] Connected as Player {self.player_id}")
-                print("[CLIENT] Waiting for opponent...")
+                print("[CLIENT] Waiting for lobby...")
                 return True
             return False
             
         except socket.timeout:
-            print("[CLIENT] Connection timeout! Is the host running?")
+            print("[CLIENT] Connection timeout!")
             return False
         except ConnectionRefusedError:
-            print("[CLIENT] Connection refused! Check host IP and ensure host is running.")
+            print("[CLIENT] Connection refused!")
             return False
         except Exception as e:
-            print(f"[CLIENT] Connection error: {e}")
+            print(f"[CLIENT] Error: {e}")
             return False
     
     def receive_updates(self):
-        """Receive state updates from server."""
+        """Receive updates from server."""
+        buffer = ""
         while self.running:
             try:
                 data = self.socket.recv(BUFFER_SIZE).decode()
                 if not data:
                     break
                 
-                if data == "START":
-                    self.game_started = True
-                elif data.startswith("STATE,"):
-                    new_state = GameState.deserialize(data)
-                    if new_state:
-                        with self.lock:
-                            self.state = new_state
-                elif data.startswith("GAMEOVER,"):
-                    winner = int(data.split(',')[1])
-                    self.state.running = False
-                    self.state.winner = winner
-                    break
+                buffer += data
+                while "\n" in buffer:
+                    message, buffer = buffer.split("\n", 1)
+                    self.process_message(message)
                     
             except Exception as e:
                 break
     
-    def send_input(self, key):
-        """Send input to server."""
+    def process_message(self, message):
+        """Process a message from server."""
+        if message == "LOBBY_READY":
+            with self.lock:
+                self.in_lobby = True
+                self.in_game = False
+                
+        elif message.startswith("LOBBY_STATE,"):
+            parts = message.split(",", 3)
+            with self.lock:
+                self.lobby_state.players_connected[0] = parts[1] == "1"
+                self.lobby_state.players_connected[1] = parts[2] == "1"
+                if len(parts) > 3:
+                    self.lobby_state.chat_history = LobbyState.deserialize_chat(parts[3])
+                    
+        elif message == "GAME_START":
+            with self.lock:
+                self.in_lobby = False
+                self.in_game = True
+                self.game_state.reset()
+                
+        elif message.startswith("STATE,"):
+            new_state = GameState.deserialize(message)
+            if new_state:
+                with self.lock:
+                    self.game_state = new_state
+                    
+        elif message.startswith("GAMEOVER,"):
+            winner = int(message.split(',')[1])
+            with self.lock:
+                self.game_state.running = False
+                self.game_state.winner = winner
+                self.in_game = False
+                
+        elif message == "RETURN_LOBBY":
+            with self.lock:
+                self.in_lobby = True
+                self.in_game = False
+    
+    def send_message(self, message):
+        """Send message to server."""
         try:
-            self.socket.send(f"INPUT,{key}".encode())
+            self.socket.send((message + "\n").encode())
         except:
             pass
     
     def run(self):
         """Main client loop."""
-        # Start input handler
         self.input_handler = InputHandler()
         self.input_handler.start()
         
-        # Start receiver thread
         receiver = threading.Thread(target=self.receive_updates)
         receiver.daemon = True
         receiver.start()
         
-        # Wait for game to start
-        while not self.game_started and self.running:
-            time.sleep(0.1)
-        
-        if not self.running:
-            self.input_handler.stop()
-            return
-        
-        # Game loop with input and rendering
-        last_render = 0
         try:
-            while self.state.running and self.running:
-                # Handle input
-                key = self.input_handler.get_key()
-                if key == 'Q':
-                    self.running = False
-                    break
-                elif key in ['W', 'S']:
-                    self.send_input(key)
+            while self.running:
+                with self.lock:
+                    in_lobby = self.in_lobby
+                    in_game = self.in_game
                 
-                # Render at target FPS
-                now = time.time()
-                if now - last_render >= FRAME_TIME:
-                    with self.lock:
-                        render_game(self.state, self.player_id)
-                    last_render = now
-                
-                time.sleep(0.01)
+                if in_lobby:
+                    self.run_lobby()
+                elif in_game:
+                    self.run_game()
+                else:
+                    time.sleep(0.1)
         finally:
             self.input_handler.stop()
+    
+    def run_lobby(self):
+        """Run lobby loop with chat."""
+        self.input_handler.set_mode("line")
+        last_render = 0
         
-        # Game over
-        if self.state.winner:
-            show_game_over(self.state.winner, self.player_id)
-            time.sleep(2)
+        while self.running:
+            with self.lock:
+                if not self.in_lobby:
+                    break
+                lobby_copy = LobbyState()
+                lobby_copy.chat_history = self.lobby_state.chat_history.copy()
+                lobby_copy.players_connected = self.lobby_state.players_connected.copy()
+            
+            # Check for completed chat message
+            line = self.input_handler.get_line()
+            if line:
+                if line.upper() == 'Q':
+                    self.running = False
+                    break
+                elif line.upper() == 'S' and self.player_id == 1:
+                    self.send_message("START_GAME")
+                elif line.strip():
+                    self.send_message(f"CHAT,{line}")
+            
+            # Also check for single key commands
+            key = self.input_handler.get_key()
+            if key == 'Q':
+                self.running = False
+                break
+            elif key == 'S' and self.player_id == 1:
+                self.send_message("START_GAME")
+            
+            # Render lobby
+            now = time.time()
+            if now - last_render >= 0.1:
+                partial = self.input_handler.get_partial_line()
+                render_lobby(lobby_copy, self.player_id, partial)
+                last_render = now
+            
+            time.sleep(0.05)
+    
+    def run_game(self):
+        """Run game loop."""
+        self.input_handler.set_mode("key")
+        last_render = 0
+        
+        while self.running:
+            with self.lock:
+                if not self.in_game:
+                    break
+                state_copy = GameState()
+                state_copy.ball_x = self.game_state.ball_x
+                state_copy.ball_y = self.game_state.ball_y
+                state_copy.paddle1_y = self.game_state.paddle1_y
+                state_copy.paddle2_y = self.game_state.paddle2_y
+                state_copy.score1 = self.game_state.score1
+                state_copy.score2 = self.game_state.score2
+                state_copy.running = self.game_state.running
+                state_copy.winner = self.game_state.winner
+            
+            # Handle input
+            key = self.input_handler.get_key()
+            if key == 'Q':
+                self.running = False
+                break
+            elif key in ['W', 'S']:
+                self.send_message(f"INPUT,{key}")
+            
+            # Render
+            now = time.time()
+            if now - last_render >= FRAME_TIME:
+                if state_copy.running:
+                    render_game(state_copy, self.player_id)
+                else:
+                    show_game_over(state_copy.winner, self.player_id)
+                last_render = now
+            
+            time.sleep(0.01)
     
     def close(self):
         """Close connection."""
@@ -612,41 +865,30 @@ def show_menu():
     """Display main menu."""
     clear_screen()
     print("""
-╔══════════════════════════════════════════════════════════════╗
-║                                                              ║
-║              ████████ █████ ██████ ██   ██  ██████           ║
-║              ██      ██   ██ ██   ██ ███  ██ ██              ║
-║              ████████ ██   ██ ██   ██ ██ ██ ██ ██  ███       ║
-║              ██      ██   ██ ██   ██ ██  ███ ██    ██        ║
-║              ██       █████  ██   ██ ██   ██  ██████         ║
-║                                                              ║
-║              ═══════════════════════════════════             ║
-║              CLI-Based Multiplayer Pong Game                 ║
-║              Network Programming Final Project               ║
-║              ═══════════════════════════════════             ║
-║                                                              ║
-║                    [1] Host Game (Server)                    ║
-║                    [2] Join Game (Client)                    ║
-║                    [Q] Quit                                  ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝
++==============================================================+
+|                                                              |
+|              TERMINAL PONG                                   |
+|              CLI-Based Multiplayer Game                      |
+|              with Chat Lobby                                 |
+|                                                              |
++==============================================================+
+|                                                              |
+|                    [1] Host Game (Server)                    |
+|                    [2] Join Game (Client)                    |
+|                    [Q] Quit                                  |
+|                                                              |
++==============================================================+
     """)
 
 
 def host_game():
-    """Start as host (server + player 1)."""
+    """Start as host."""
     clear_screen()
     print("\n[HOST MODE] Starting server...")
     
     server = GameServer()
     local_ip = server.start()
     
-    # Start game loop in background
-    game_thread = threading.Thread(target=server.run_game_loop)
-    game_thread.daemon = True
-    game_thread.start()
-    
-    # Connect local client
     time.sleep(0.5)
     client = GameClient()
     if client.connect("127.0.0.1"):
@@ -654,10 +896,11 @@ def host_game():
         client.close()
     
     server.stop()
+    restore_terminal()
 
 
 def join_game():
-    """Join as guest (client / player 2)."""
+    """Join as guest."""
     clear_screen()
     print("\n[JOIN MODE]")
     
@@ -673,6 +916,8 @@ def join_game():
         client.close()
     else:
         time.sleep(2)
+    
+    restore_terminal()
 
 
 def main():
@@ -687,11 +932,10 @@ def main():
             join_game()
         elif choice == 'Q':
             clear_screen()
-            print("\nThank you for playing Terminal Pong!")
-            print("Network Programming Final Project\n")
+            print("\nThank you for playing Terminal Pong!\n")
             break
         else:
-            print("Invalid option! Please try again.")
+            print("Invalid option!")
             time.sleep(1)
 
 
