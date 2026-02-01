@@ -1,7 +1,20 @@
+"""
+Input Handler Module
+Thread-safe cross-platform keyboard input with validation.
+"""
+
 import os
 import sys
 import time
 import threading
+import re
+import logging
+
+from config import LOG_LEVEL, LOG_FORMAT
+
+# Configure logging
+logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
+logger = logging.getLogger(__name__)
 
 
 class InputHandler:
@@ -104,6 +117,31 @@ class InputHandler:
                 try:
                     if select.select([sys.stdin], [], [], 0.01)[0]:
                         key = sys.stdin.read(1)
+                        
+                        # Check for escape sequence (arrow keys)
+                        if key == '\x1b':
+                            # Read next characters if available
+                            if select.select([sys.stdin], [], [], 0.05)[0]:
+                                next_char = sys.stdin.read(1)
+                                if next_char == '[':
+                                    if select.select([sys.stdin], [], [], 0.05)[0]:
+                                        arrow_char = sys.stdin.read(1)
+                                        if arrow_char == 'A':
+                                            self._process_key('UP')
+                                            continue
+                                        elif arrow_char == 'B':
+                                            self._process_key('DOWN')
+                                            continue
+                                        elif arrow_char == 'C':
+                                            self._process_key('RIGHT')
+                                            continue
+                                        elif arrow_char == 'D':
+                                            self._process_key('LEFT')
+                                            continue
+                            # Escape key pressed (not arrow)
+                            self._process_key('ESC')
+                            continue
+                        
                         self._process_key(key)
                 except:
                     break
@@ -117,8 +155,12 @@ class InputHandler:
     def _process_key(self, key):
         """Process a key press based on current mode."""
         with self.lock:
-            # Always set current_key for single-key reading
-            self.current_key = key.upper()
+            # For multi-character keys (like 'UP', 'DOWN'), keep as-is
+            # For single chars, uppercase them
+            if len(key) == 1:
+                self.current_key = key.upper()
+            else:
+                self.current_key = key  # Already uppercase (UP, DOWN, etc)
             
             if self.mode == "line":
                 # In line mode, also accumulate text for chat
@@ -126,12 +168,16 @@ class InputHandler:
                     self.line_ready = True
                 elif key == '\x7f' or key == '\b':  # Backspace
                     self.current_line = self.current_line[:-1]
-                elif key.isprintable() and key.upper() not in ['Q']:
+                elif len(key) == 1 and key.isprintable() and key.upper() not in ['Q']:
                     # Don't add Q to chat line (it's quit command)
                     # TAB is handled separately
                     if len(self.current_line) < 40:
                         self.current_line += key
 
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
 
 def clear_screen():
     """Clear the terminal screen."""
@@ -142,3 +188,51 @@ def restore_terminal():
     """Restore terminal to normal mode."""
     if os.name != 'nt':
         os.system('stty sane')
+
+
+# ============================================================================
+# VALIDATION FUNCTIONS
+# ============================================================================
+
+def is_valid_ip(ip_string):
+    """
+    Validate IPv4 address format.
+    
+    Returns:
+        bool: True if valid IPv4 address format
+    """
+    if not ip_string:
+        return False
+    
+    # Allow localhost
+    if ip_string.lower() == 'localhost':
+        return True
+    
+    # IPv4 pattern
+    pattern = r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$'
+    match = re.match(pattern, ip_string)
+    
+    if not match:
+        return False
+    
+    # Check each octet is 0-255
+    for i in range(1, 5):
+        octet = int(match.group(i))
+        if octet < 0 or octet > 255:
+            return False
+    
+    return True
+
+
+def validate_port(port):
+    """
+    Validate port number.
+    
+    Returns:
+        bool: True if valid port (1-65535)
+    """
+    try:
+        port_num = int(port)
+        return 1 <= port_num <= 65535
+    except (ValueError, TypeError):
+        return False

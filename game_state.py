@@ -19,6 +19,8 @@ class GameState:
         self.ball_vy = BALL_SPEED_Y * random.choice([-1, 1])
         self.paddle1_y = GAME_HEIGHT // 2 - PADDLE_HEIGHT // 2
         self.paddle2_y = GAME_HEIGHT // 2 - PADDLE_HEIGHT // 2
+        self.paddle1_height = PADDLE_HEIGHT  # Dynamic paddle height
+        self.paddle2_height = PADDLE_HEIGHT  # Dynamic paddle height
         self.score1 = 0
         self.score2 = 0
         self.running = True
