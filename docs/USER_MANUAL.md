@@ -1,72 +1,231 @@
-# Panduan Pengguna
+# Panduan Pengguna (User Manual)
 
-## 1. Pendahuluan
+## Daftar Isi
+1. [Instalasi](#instalasi)
+2. [Menjalankan Game](#menjalankan-game)
+3. [Mode Permainan](#mode-permainan)
+4. [Kontrol](#kontrol)
+5. [Power-ups](#power-ups)
+6. [Efek Visual](#efek-visual)
+7. [Sound Effects](#sound-effects)
+8. [Troubleshooting](#troubleshooting)
 
-PONG-CLI adalah reimplementasi modern berbasis terminal dari permainan klasik Arcade Pong. Game ini memiliki antarmuka yang responsif, mode pemain tunggal melawan AI, dan kemampuan multipemain waktu nyata (real-time) melalui jaringan lokal.
+---
 
-## 2. Instalasi & Persyaratan
+## Instalasi
 
-### 2.1 Persyaratan Sistem
-- **Sistem Operasi**: Linux, macOS, atau Windows (Disarankan menggunakan Windows Terminal)
-- **Perangkat Lunak**: Python 3.6 atau lebih baru
-- **Jaringan**: Local Area Network (LAN) untuk fitur multipemain
+### Persyaratan Sistem
+- Python 3.6 atau lebih baru
+- Terminal dengan dukungan ANSI colors
+- (Opsional) pyfiglet untuk ASCII art title
+- (Opsional) ffmpeg/mpv untuk sound effects
 
-### 2.2 Instruksi Instalasi
-1. Clone repositori atau ekstrak kode sumber.
-2. Buka terminal di dalam direktori proyek.
-3. Tidak ada dependensi eksternal (`pip install`) yang diperlukan; game ini hanya menggunakan pustaka standar Python.
+### Langkah Instalasi
 
-## 3. Cara Bermain
+```bash
+# 1. Clone repository
+git clone https://github.com/username/pong-cli.git
+cd pong-cli
 
-Jalankan permainan menggunakan perintah berikut:
+# 2. Install dependensi (opsional tapi disarankan)
+# Arch Linux / CachyOS
+sudo pacman -S python-pyfiglet ffmpeg
+
+# Ubuntu/Debian
+pip install pyfiglet
+sudo apt install ffmpeg
+```
+
+---
+
+## Menjalankan Game
 
 ```bash
 python3 main.py
 ```
 
-### 3.1 Menu Utama
-Navigasi menu menggunakan keyboard:
-- **Panah Atas/Bawah** atau **W/S**: Memindahkan pilihan
-- **Enter**: Konfirmasi pilihan
-- **Q**: Keluar aplikasi
+### Navigasi Menu
+- `W` atau `↑` - Pilihan ke atas
+- `S` atau `↓` - Pilihan ke bawah
+- `Enter` - Pilih/Konfirmasi
+- `Q` - Keluar
 
-### 3.2 Mode Permainan
+---
 
-#### VS AI (Pemain Tunggal)
-Tantang komputer dalam pertandingan 1 lawan 1.
-- **Pilih Tingkat Kesulitan**:
-    - **Easy**: Untuk pemula. AI lambat dan sering melakukan kesalahan.
-    - **Medium**: Tantangan seimbang.
-    - **Hard**: Tantangan kompetitif untuk pemain ahli.
+## Mode Permainan
 
-#### Host Game (Server Multipemain)
-Mulai server permainan di mesin Anda.
-- Pilih "Host Game".
-- Masukkan nomor port (default: 5000).
-- Bagikan alamat IP dan Port Anda ke teman.
-- Tunggu pemain kedua bergabung.
+### 1. VS AI (Single Player)
 
-#### Join Game (Klien Multipemain)
-Hubungkan ke permainan yang di-host oleh teman.
-- Pilih "Join Game".
-- Masukkan Alamat IP Host.
-- Masukkan Nomor Port Host.
+Bermain melawan komputer dengan 3 tingkat kesulitan:
 
-### 3.3 Kontrol
+| Difficulty | Deskripsi |
+|------------|-----------|
+| **Easy** | AI lambat dan sering meleset. Cocok untuk pemula. |
+| **Medium** | Tantangan seimbang. AI cukup responsif. |
+| **Hard** | AI sangat cepat dan akurat. Tantangan maksimal. |
 
-| Aksi | Tombol 1 | Tombol 2 |
-| :--- | :--- | :--- |
-| **Gerak Atas** | `W` | `Panah Atas` |
-| **Gerak Bawah** | `S` | `Panah Bawah` |
-| **Keluar Match** | `Q` | - |
+**Cara Bermain:**
+1. Pilih "VS AI" dari menu utama
+2. Pilih tingkat kesulitan
+3. Game dimulai otomatis
 
-## 4. Pemecahan Masalah (Troubleshooting)
+### 2. Host Game (Multiplayer - Server)
 
-### 4.1 Gagal Terhubung
-- **Firewall**: Pastikan firewall Anda mengizinkan Python untuk mengakses jaringan lokal.
-- **Alamat IP**: Pastikan Anda menggunakan IP lokal yang benar dari mesin host (gunakan `ifconfig` atau `ip addr`).
-- **Port**: Pastikan port tidak sedang digunakan oleh aplikasi lain.
+Menjadi host server untuk pemain lain bergabung.
 
-### 4.2 Aplikasi Macet (Freeze)
-- Mode input terminal terkadang bisa tidak sinkron. Jika ini terjadi, restart aplikasi.
-- Gunakan `Ctrl+C` untuk menutup paksa jika tombol `Q` tidak merespon.
+**Cara Bermain:**
+1. Pilih "Host Game" dari menu utama
+2. Port default: 5555 (atau masukkan port lain)
+3. Tunggu pemain lain bergabung di lobby
+4. Tekan `TAB` untuk memulai game
+
+### 3. Join Game (Multiplayer - Client)
+
+Bergabung ke game yang di-host oleh pemain lain.
+
+**Cara Bermain:**
+1. Pilih "Join Game" dari menu utama
+2. Masukkan IP Address host (contoh: 192.168.1.100)
+3. Masukkan port (default: 5555)
+4. Tunggu di lobby sampai host memulai game
+
+---
+
+## Kontrol
+
+### Menu
+| Tombol | Aksi |
+|--------|------|
+| `W` / `↑` | Navigasi ke atas |
+| `S` / `↓` | Navigasi ke bawah |
+| `Enter` | Pilih opsi |
+| `Q` | Keluar |
+
+### Dalam Game
+| Tombol | Aksi |
+|--------|------|
+| `W` / `↑` | Paddle ke atas |
+| `S` / `↓` | Paddle ke bawah |
+| `Q` | Keluar dari game |
+
+### Lobby (Multiplayer)
+| Tombol | Aksi |
+|--------|------|
+| `TAB` | Mulai game (hanya host) |
+| `Q` | Keluar dari lobby |
+| Ketik + `Enter` | Kirim chat |
+
+---
+
+## Power-ups
+
+Power-ups adalah item yang muncul secara acak di arena dan memberikan efek sementara.
+
+### Daftar Power-ups
+| Simbol | Nama | Efek | Durasi |
+|--------|------|------|--------|
+| **S** (kuning) | Speed+ | Mempercepat bola 1.5x | 5 detik |
+| **+** (kuning) | Paddle+ | Memperbesar paddle Anda | 5 detik |
+| **-** (kuning) | Paddle- | Memperkecil paddle lawan | 5 detik |
+
+### Cara Kerja
+1. Power-up spawn setiap 10 detik di posisi random
+2. Maksimal 2 power-up di arena sekaligus
+3. Power-up diambil saat bola menyentuhnya
+4. Pemain yang mendapat efek ditentukan oleh arah bola:
+   - Bola bergerak ke kanan → Player 1
+   - Bola bergerak ke kiri → Player 2/AI
+
+---
+
+## Efek Visual
+
+### Ball Trail
+Jejak bola yang memudar saat bergerak, memberikan kesan kecepatan.
+
+### Goal Explosion
+Animasi ledakan (★) saat gol dicetak.
+
+### Paddle Hit Flash
+Efek kilat saat bola memukul paddle.
+
+### Ball Warning
+Bola berubah warna **merah** saat mendekati gol.
+
+---
+
+## Sound Effects
+
+Game menggunakan file `sfx.mp3` untuk efek suara collision.
+
+### Persyaratan
+- File `sfx.mp3` harus ada di folder game
+- Audio player: ffplay, mpv, atau paplay
+
+### Mengaktifkan/Menonaktifkan
+Sound aktif secara default. Untuk menonaktifkan, edit `sound.py`:
+```python
+SOUND_ENABLED = False
+```
+
+---
+
+## Troubleshooting
+
+### Title Tidak Muncul / Tampilan Aneh
+**Masalah:** Pyfiglet tidak terinstall  
+**Solusi:**
+```bash
+# Arch Linux
+sudo pacman -S python-pyfiglet
+
+# Pip
+pip install pyfiglet
+```
+
+### Suara Tidak Berbunyi
+**Masalah:** Audio player tidak ditemukan  
+**Solusi:**
+```bash
+# Arch Linux
+sudo pacman -S ffmpeg
+
+# Ubuntu
+sudo apt install ffmpeg
+```
+
+### Karakter Kotak/Aneh
+**Masalah:** Terminal tidak mendukung Unicode  
+**Solusi:** Gunakan terminal modern seperti:
+- Konsole
+- GNOME Terminal
+- Windows Terminal
+- Kitty
+
+### Input Tidak Responsif
+**Masalah:** Terminal tidak dalam raw mode  
+**Solusi:** Pastikan menjalankan langsung di terminal, bukan di IDE
+
+### Koneksi Multiplayer Gagal
+**Masalah:** Firewall atau port tertutup  
+**Solusi:**
+1. Pastikan host dan client di jaringan yang sama
+2. Buka port 5555 di firewall:
+   ```bash
+   sudo ufw allow 5555
+   ```
+3. Cek IP address host dengan `ip addr` atau `hostname -I`
+
+---
+
+## Tips Bermain
+
+1. **Antisipasi** - Prediksi arah bola dan posisikan paddle lebih awal
+2. **Gunakan Power-ups** - Ambil power-up saat bola mengarah ke arah yang menguntungkan
+3. **Perhatikan Warna Bola** - Bola merah berarti hampir gol!
+4. **Latihan vs AI Easy** - Mulai dari Easy untuk memahami mekanik game
+5. **Komunikasi** - Di multiplayer, gunakan fitur chat untuk koordinasi
+
+---
+
+*Selamat bermain!* 🎮
