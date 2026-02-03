@@ -2,74 +2,151 @@
 
 Sebuah permainan Pong modern berbasis terminal dengan grafis ASCII. Proyek ini menghadirkan aksi arcade klasik ke dalam terminal Anda dengan dukungan untuk **Multiplayer Real-time** (LAN) dan **Single Player VS AI**.
 
-Dibuat menggunakan Python 3 Standard Library tanpa dependensi eksternal.
+![Preview](docs/preview.png)
 
 ## Fitur Utama
 
-- **Multiplayer LAN**: Dua pemain dapat bermain secara real-time di jaringan lokal.
-- **VS AI Mode**: Tantang komputer dalam 3 tingkat kesulitan (Easy, Medium, Hard).
-- **Lobby & Chat**: Sistem lobby interaktif untuk menunggu lawan dan mengobrol.
-- **UI Responsif**: Tampilan menyesuaikan dengan ukuran terminal Anda.
-- **Efek Suara**: Umpan balik audio sederhana (beep) untuk aksi permainan.
-- **Tanpa Instalasi Ribet**: Cukup `git clone` dan jalankan.
-
-## Dokumentasi Lengkap
-
-Dokumentasi rinci tersedia di folder `docs/`:
-
-- **[Panduan Pengguna (User Manual)](docs/USER_MANUAL.md)**: Cara instalasi, kontrolgame, dan troubleshooting.
-- **[Arsitektur Sistem](docs/SYSTEM_ARCHITECTURE.md)**: Penjelasan teknis, diagram kelas, dan alur sistem.
-- **[Panduan Pengembang](docs/DEVELOPER_GUIDE.md)**: Struktur kode, protokol jaringan, dan cara berkontribusi.
-- **[Diagram Visual](docs/diagrams/)**: Flowchart, Sequence, dan Class Diagram.
+| Fitur | Deskripsi |
+|-------|-----------|
+| **Multiplayer LAN** | Dua pemain bermain real-time di jaringan lokal via TCP |
+| **VS AI Mode** | Tantang komputer dalam 3 tingkat kesulitan |
+| **Power-ups** | Item yang muncul di arena dan mempengaruhi gameplay |
+| **Visual Effects** | Trail bola, animasi ledakan saat gol, efek paddle hit |
+| **Sound Effects** | Suara collision menggunakan file audio (sfx.mp3) |
+| **Lobby & Chat** | Sistem lobby interaktif dengan fitur chat |
+| **UI Responsif** | Tampilan menyesuaikan dengan ukuran terminal |
 
 ## Persyaratan
 
-- Python 3.6 atau lebih baru.
-- Terminal yang mendukung ANSI escape codes (Linux/Mac default, Windows Terminal disarankan).
-- Koneksi jaringan (Wi-Fi/LAN) untuk fitur multiplayer.
+- **Python 3.6+**
+- **pyfiglet** (untuk ASCII art title)
+- **ffplay/mpv** (opsional, untuk sound effects)
+- Terminal dengan ANSI escape codes support
+
+### Instalasi Dependensi
+
+```bash
+# Arch Linux / CachyOS
+sudo pacman -S python-pyfiglet ffmpeg
+
+# Ubuntu/Debian
+pip install pyfiglet
+sudo apt install ffmpeg
+
+# Windows
+pip install pyfiglet
+# Download ffmpeg dari https://ffmpeg.org/
+```
 
 ## Cara Bermain
 
-1. Buka terminal di folder proyek.
-2. Jalankan permainan:
-   ```bash
-   python3 main.py
-   ```
-3. Gunakan tombol **Panah Atas/Bawah** atau **W/S** untuk navigasi menu, **Enter** untuk memilih.
+```bash
+# Clone repository
+git clone https://github.com/username/pong-cli.git
+cd pong-cli
 
-### Mode VS AI (Single Player)
-- Pilih menu **VS AI**.
-- Pilih tingkat kesulitan:
-  - **Easy**: AI lambat dan sering meleset.
-  - **Medium**: Tantangan seimbang.
-  - **Hard**: Tantangan kompetitif.
+# Jalankan game
+python3 main.py
+```
 
-### Mode Multiplayer
-- **Host**: Pilih **Host Game**, masukkan port, dan tunggu lawan.
-- **Join**: Pilih **Join Game**, masukkan IP Host dan port.
+### Navigasi Menu
+| Tombol | Aksi |
+|--------|------|
+| `W` / `↑` | Pilihan ke atas |
+| `S` / `↓` | Pilihan ke bawah |
+| `Enter` | Pilih menu |
+| `Q` | Keluar |
 
-### Kontrol Permainan
+### Mode Permainan
 
-| Pemain | Atas | Bawah | Keluar |
-| :--- | :--- | :--- | :--- |
-| **Anda** | `W` atau `Panah Atas` | `S` atau `Panah Bawah` | `Q` |
+#### 1. VS AI (Single Player)
+Bermain melawan komputer dengan 3 tingkat kesulitan:
+- **Easy**: AI lambat, sering meleset
+- **Medium**: Tantangan seimbang
+- **Hard**: AI cepat dan akurat
+
+#### 2. Multiplayer (Host/Join)
+- **Host Game**: Menjadi server, tunggu pemain lain bergabung
+- **Join Game**: Masukkan IP address host untuk bergabung
+
+### Kontrol Dalam Game
+| Tombol | Aksi |
+|--------|------|
+| `W` / `↑` | Paddle ke atas |
+| `S` / `↓` | Paddle ke bawah |
+| `Q` | Keluar dari game |
+
+## Sistem Power-ups
+
+Power-ups muncul secara acak di arena dan memberikan efek sementara (5 detik):
+
+| Simbol | Nama | Efek |
+|--------|------|------|
+| **S** | Speed+ | Mempercepat bola 1.5x |
+| **+** | Paddle+ | Memperbesar paddle pemain |
+| **-** | Paddle- | Memperkecil paddle lawan |
 
 ## Struktur Proyek
 
-```text
+```
 pong-cli/
-├── main.py           # Entry point & Menu
-├── game_state.py     # Data permainan (Model)
-├── renderer.py       # Tampilan UI (View)
-├── physics.py        # Logika pergerakan & tabrakan
-├── ai.py             # Logika Kecerdasan Buatan
-├── server.py         # Kode Server TCP
-├── client.py         # Kode Client TCP
-├── sound.py          # Sistem Suara
-├── input_handler.py  # Input Keyboard Asinkron
-└── docs/             # Dokumentasi Lengkap
+├── main.py           # Entry point & Menu utama
+├── config.py         # Konfigurasi game (ukuran, kecepatan, dll)
+├── game_state.py     # State management (skor, posisi)
+├── physics.py        # Fisika bola & collision detection
+├── renderer.py       # Rendering ASCII/Unicode ke terminal
+├── input_handler.py  # Input keyboard non-blocking
+├── ai.py             # AI opponent controller
+├── powerups.py       # Sistem power-ups
+├── effects.py        # Efek visual (trail, explosion)
+├── sound.py          # Sound effects player
+├── colors.py         # ANSI color utilities
+├── ui_components.py  # Komponen UI (box, title, dll)
+├── server.py         # TCP game server
+├── client.py         # TCP game client
+├── sfx.mp3           # File audio untuk collision
+└── docs/             # Dokumentasi lengkap
+    ├── USER_MANUAL.md
+    ├── DEVELOPER_GUIDE.md
+    ├── SYSTEM_ARCHITECTURE.md
+    └── diagrams/
 ```
 
+## Dokumentasi Lengkap
+
+- [Panduan Pengguna](docs/USER_MANUAL.md) - Instalasi, kontrol, troubleshooting
+- [Arsitektur Sistem](docs/SYSTEM_ARCHITECTURE.md) - Penjelasan teknis & diagram
+- [Panduan Developer](docs/DEVELOPER_GUIDE.md) - Struktur kode & cara kontribusi
+- [Diagram Visual](docs/diagrams/) - Class, Sequence, State diagrams
+
+## Konfigurasi
+
+Edit `config.py` untuk menyesuaikan game:
+
+```python
+GAME_WIDTH = 60       # Lebar arena
+GAME_HEIGHT = 20      # Tinggi arena
+PADDLE_HEIGHT = 4     # Tinggi paddle
+WIN_SCORE = 5         # Skor untuk menang
+FPS = 20              # Frame rate
+BALL_SPEED_X = 1.5    # Kecepatan horizontal bola
+BALL_SPEED_Y = 1.0    # Kecepatan vertikal bola
+```
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---------|--------|
+| Title tidak muncul | Install pyfiglet: `pip install pyfiglet` |
+| Suara tidak berbunyi | Install ffmpeg/mpv, pastikan sfx.mp3 ada |
+| Karakter aneh | Gunakan terminal dengan Unicode support |
+| Input tidak responsif | Pastikan terminal dalam raw mode |
+
+## Lisensi
+
+MIT License - Bebas digunakan dan dimodifikasi.
+
 ## Penulis
-Proyek Tugas Besar Network Programming.
-Dibuat dengan ❤️ menggunakan Python.
+
+Proyek Tugas Besar Network Programming.  
+Dibuat dengan Python 3 Standard Library.
