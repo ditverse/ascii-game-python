@@ -43,8 +43,8 @@ class SpeedBoost(PowerUp):
     
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.symbol = '⚡'
-        self.name = 'Speed Boost'
+        self.symbol = 'S'  # ASCII to avoid border issues
+        self.name = 'Speed+'
         self.speed_multiplier = 1.5
     
     def apply(self, state, player_id):
@@ -62,8 +62,8 @@ class PaddleGrow(PowerUp):
     
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.symbol = '↕'
-        self.name = 'Paddle Grow'
+        self.symbol = '+'
+        self.name = 'Paddle+'
         self.size_increase = 2
         self.affected_player = None
     
@@ -87,8 +87,8 @@ class PaddleShrink(PowerUp):
     
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.symbol = '↔'
-        self.name = 'Paddle Shrink'
+        self.symbol = '-'
+        self.name = 'Paddle-'
         self.size_decrease = 2
         self.affected_player = None
     

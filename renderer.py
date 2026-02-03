@@ -458,3 +458,160 @@ def show_game_over_ai(winner):
     # Render Centered
     for line in center_block(lines):
         print(line)
+
+
+def render_game_with_effects(state, player_id, effects_manager=None, powerup_manager=None):
+    """
+    Render the game state with visual effects.
+    
+    Args:
+        state: GameState object
+        player_id: Current player ID (1 or 2)
+        effects_manager: Optional EffectsManager for visual effects
+        powerup_manager: Optional PowerUpManager for power-up display
+    """
+    clear_screen()
+    
+    # Get paddle heights (support power-ups)
+    paddle1_height = getattr(state, 'paddle1_height', PADDLE_HEIGHT)
+    paddle2_height = getattr(state, 'paddle2_height', PADDLE_HEIGHT)
+    
+    # Create field buffer with effects layer
+    field = [[' ' for _ in range(GAME_WIDTH)] for _ in range(GAME_HEIGHT)]
+    effect_layer = [[None for _ in range(GAME_WIDTH)] for _ in range(GAME_HEIGHT)]
+    
+    # Draw effects first (background layer)
+    if effects_manager:
+        # Update effects
+        effects_manager.update()
+        effects_manager.update_ball_trail(state.ball_x, state.ball_y)
+        
+        # Get all particles
+        for x, y, char, effect_type in effects_manager.get_all_particles():
+            if 0 <= x < GAME_WIDTH and 0 <= y < GAME_HEIGHT:
+                effect_layer[int(y)][int(x)] = (char, effect_type)
+    
+    # Draw power-ups
+    if powerup_manager:
+        for powerup in powerup_manager.get_field_powerups():
+            px, py = int(powerup.x), int(powerup.y)
+            if 0 <= px < GAME_WIDTH and 0 <= py < GAME_HEIGHT:
+                field[py][px] = powerup.symbol
+    
+    # Draw center net
+    center_x = GAME_WIDTH // 2
+    net_char = NET_CHAR
+    for y in range(GAME_HEIGHT):
+        if y % 2 == 0:
+            field[y][center_x] = net_char
+    
+    # Paddle positions
+    paddle1_x = 2
+    paddle2_x = GAME_WIDTH - 3
+    
+    # Draw paddles with dynamic heights
+    paddle_char = PADDLE_CHAR if ENABLE_UNICODE else '|'
+    for i in range(paddle1_height):
+        y1 = state.paddle1_y + i
+        if 0 <= y1 < GAME_HEIGHT:
+            field[y1][paddle1_x] = paddle_char
+    
+    for i in range(paddle2_height):
+        y2 = state.paddle2_y + i
+        if 0 <= y2 < GAME_HEIGHT:
+            field[y2][paddle2_x] = paddle_char
+    
+    # Draw ball
+    ball_x = int(state.ball_x)
+    ball_y = int(state.ball_y)
+    ball_char = BALL_CHAR if ENABLE_UNICODE else 'O'
+    if 0 <= ball_x < GAME_WIDTH and 0 <= ball_y < GAME_HEIGHT:
+        field[ball_y][ball_x] = ball_char
+    
+    # Check if ball is near goal (for warning effect)
+    ball_near_goal = ball_x < 8 or ball_x > GAME_WIDTH - 8
+    
+    # === RENDER OUTPUT ===
+    screen_lines = []
+    
+    # Score display
+    if player_id == 1:
+        you_label = f"YOU (P1): {state.score1}"
+        opp_label = f"Opponent (P2): {state.score2}"
+    else:
+        you_label = f"YOU (P2): {state.score2}"
+        opp_label = f"Opponent (P1): {state.score1}"
+    
+    score_line = f"  {bold(you_label)}  |  {dim(opp_label)}"
+    
+    # Active effects indicator
+    if effects_manager:
+        active_effects = []
+        if powerup_manager:
+            for effect in powerup_manager.get_active_effects():
+                remaining = effect.effect_duration - (
+                    __import__('time').time() - effect.effect_start_time
+                )
+                if remaining > 0:
+                    active_effects.append(f"{effect.symbol} {effect.name}: {remaining:.1f}s")
+        if active_effects:
+            effects_str = "  |  " + "  ".join(active_effects)
+            score_line += dim(effects_str)
+    
+    screen_lines.append(pad_line(score_line, GAME_WIDTH + 2))
+    
+    # Top border
+    top_border = get_box_char('tl') + get_box_char('h') * GAME_WIDTH + get_box_char('tr')
+    screen_lines.append(colorize(top_border, Style.DIM))
+    
+    # Render field with effects
+    for y, row in enumerate(field):
+        line_content = ""
+        for x, char in enumerate(row):
+            # Check for effect at this position
+            effect = effect_layer[y][x]
+            
+            if effect:
+                eff_char, eff_type = effect
+                # Render effect with appropriate style
+                if eff_type == 'explosion':
+                    line_content += colorize(eff_char, Style.BOLD, Style.YELLOW)
+                elif eff_type == 'trail':
+                    line_content += dim(eff_char)
+                elif eff_type == 'hit':
+                    line_content += colorize(eff_char, Style.CYAN)
+                else:
+                    line_content += eff_char
+            elif char == paddle_char:
+                # Highlight paddles
+                if x < GAME_WIDTH // 2:
+                    line_content += bold(char)
+                else:
+                    line_content += dim(char)
+            elif char == ball_char:
+                # Ball with warning effect
+                if ball_near_goal:
+                    line_content += colorize(char, Style.BOLD, Style.RED)
+                else:
+                    line_content += bold(char)
+            elif char == net_char:
+                line_content += dim(char)
+            elif char in ['+', '-', 'S']:  # Power-up symbols (ASCII)
+                line_content += colorize(char, Style.BOLD, Style.YELLOW)
+            else:
+                line_content += char
+        
+        v = colorize(get_box_char('v'), Style.DIM)
+        screen_lines.append(f"{v}{line_content}{v}")
+    
+    # Bottom border
+    bottom_border = get_box_char('bl') + get_box_char('h') * GAME_WIDTH + get_box_char('br')
+    screen_lines.append(colorize(bottom_border, Style.DIM))
+    
+    # Controls
+    controls = f"  Controls: {bold('[W]')} Up  {bold('[S]')} Down  |  {dim('[Q] Quit')}"
+    screen_lines.append(pad_line(controls, GAME_WIDTH + 2))
+    
+    # Render Centered
+    for line in center_block(screen_lines):
+        print(line)

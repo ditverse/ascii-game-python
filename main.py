@@ -204,11 +204,13 @@ def join_game():
 def play_vs_ai(input_handler, difficulty='medium'):
     """Play against AI opponent."""
     from game_state import GameState
-    from physics import update_physics, move_paddle
+    from physics import update_physics, move_paddle, process_physics_events
     from ai import AIController
-    from sound import play_goal, play_game_over, play_game_start
-    from renderer import render_game_ai, show_game_over_ai
+    from sound import play_game_over, play_game_start
+    from renderer import render_game_with_effects, show_game_over_ai
     from config import FPS, FRAME_TIME
+    from effects import EffectsManager
+    from powerups import PowerUpManager
     
     clear_screen()
     print()
@@ -221,6 +223,8 @@ def play_vs_ai(input_handler, difficulty='medium'):
     # Initialize game
     state = GameState()
     ai = AIController(difficulty)
+    effects = EffectsManager(use_unicode=True)
+    powerups = PowerUpManager()
     
     # input_handler already running
     input_handler.set_mode("key")
@@ -254,29 +258,27 @@ def play_vs_ai(input_handler, difficulty='medium'):
             if ai_move:
                 move_paddle(state, 2, ai_move)
             
-            # Store old scores for sound detection
-            old_score1 = state.score1
-            old_score2 = state.score2
+            # Update physics with events
+            events = update_physics(state, return_events=True)
             
-            # Update physics
-            update_physics(state)
+            # Process events for sound and visual effects
+            process_physics_events(events, effects)
             
-            # Check for scoring
-            if state.score1 > old_score1 or state.score2 > old_score2:
-                play_goal()
+            # Update power-ups
+            powerups.update(state, current_time)
             
-            # Render
-            render_game_ai(state)
+            # Render with effects
+            render_game_with_effects(state, 1, effects, powerups)
     
     except KeyboardInterrupt:
         pass
-    # No finally block needed here as we don't stop the handler passed from menu
     
     # Game over
     if state.winner:
         play_game_over()
         show_game_over_ai(state.winner)
         time.sleep(3)
+
 
     # restore_terminal() removed - keep handler running for menu
 
